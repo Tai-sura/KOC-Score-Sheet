@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uni+ KOC 創始黑客松 - 4D 智力夥伴行為錨定評分系統</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 圖標 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 引入 Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Chart.js 處理動態雷達圖 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 MathJax 處理數學公式 -->
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$$', '$$'], ['\\(', '\\)']] },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=Outfit:wght@300;400;600;800&display=swap');
+        
+        body { 
+            font-family: 'Outfit', 'Noto Sans TC', sans-serif; 
+            background-color: #0f172a; /* 深藍黑色底色 */
+            color: #f1f5f9;
+        }
+
+        /* 滾動條美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .score-btn {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .score-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Veto 全局警報動畫 */
+        .veto-global-pulse {
+            animation: veto-screen-pulse 2s infinite;
+        }
+        @keyframes veto-screen-pulse {
+            0% { box-shadow: inset 0 0 40px rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: inset 0 0 60px rgba(239, 68, 68, 0.5); border-color: rgba(239, 68, 68, 0.8); }
+            100% { box-shadow: inset 0 0 40px rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); }
+        }
+
+        /* Veto 蓋章效果 */
+        .veto-stamp-overlay {
+            position: absolute;
+            top: 50%;
+            left: 55%;
+            transform: translate(-50%, -50%) rotate(-12deg);
+            border: 5px dashed #ef4444;
+            color: #ef4444;
+            font-family: 'Noto Sans TC', sans-serif;
+            font-size: 2.8rem;
+            font-weight: 900;
+            padding: 0.6rem 2rem;
+            border-radius: 12px;
+            opacity: 0.9;
+            background-color: rgba(254, 226, 226, 0.95);
+            box-shadow: 0 10px 25px rgba(239, 68, 68, 0.3);
+            pointer-events: none;
+            z-index: 40;
+            letter-spacing: 4px;
+            animation: stamp-slam 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes stamp-slam {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(3) rotate(-30deg); filter: blur(4px); }
+            100% { opacity: 0.9; transform: translate(-50%, -50%) scale(1) rotate(-12deg); filter: blur(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white">
+
+    <div id="app" class="flex-1 flex flex-col" v-cloak>
+        
+        <!-- 全局導航欄 -->
+        <nav class="bg-slate-950 border-b border-slate-800 sticky top-0 z-50 px-6 py-4 shadow-lg">
+            <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="bg-gradient-to-tr from-blue-600 to-indigo-500 text-white p-2.5 rounded-xl shadow-md shadow-blue-500/20">
+                        <i class="fa-solid fa-square-poll-vertical text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-black bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+                            Uni+ KOC 創始黑客松
+                        </h1>
+                        <p class="text-xs text-slate-400 font-medium">4D 智力夥伴行為錨定評分矩陣</p>
+                    </div>
+                </div>
+
+                <!-- 標籤切換 -->
+                <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    <button @click="currentTab = 'scoring'" 
+                            :class="['px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2', 
+                                     currentTab === 'scoring' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:text-slate-200']">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        評分介面
+                    </button>
+                    <button @click="currentTab = 'admin'" 
+                            :class="['px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2', 
+                                     currentTab === 'admin' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:text-slate-200']">
+                        <i class="fa-solid fa-chart-line"></i>
+                        總控儀表板
+                        <span v-if="hasVetoConflictGlobal" class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    </button>
+                    <button @click="currentTab = 'candidate_mgr'" 
+                            :class="['px-5 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2', 
+                                     currentTab === 'candidate_mgr' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:text-slate-200']">
+                        <i class="fa-solid fa-users-gear"></i>
+                        候選人與數據管理
+                    </button>
+                </div>
+
+                <!-- 考官快速切換 -->
+                <div class="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">
+                    <span class="text-xs text-slate-400 font-bold flex items-center gap-1">
+                        <i class="fa-solid fa-user-tie"></i> 當前考官:
+                    </span>
+                    <select v-model.number="currentExaminerId" 
+                            class="bg-transparent text-sm font-bold text-blue-400 outline-none cursor-pointer focus:text-blue-300">
+                        <option v-for="e in examiners" :key="e.id" :value="e.id" class="bg-slate-900 text-slate-100">
+                            {{ e.name }}
+                        </option>
+                    </select>
+                    <!-- 考官評分進度指標 -->
+                    <span class="text-xs bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
+                        {{ getExaminerGradedCount(currentExaminerId) }}/20 已評
+                    </span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 主體內容區 -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 gap-6">
+            
+            <!-- TAB 1: 評分介面 -->
+            <div v-show="currentTab === 'scoring'" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                <!-- 左側：候選人導航列表 -->
+                <aside class="lg:col-span-3 glass-card rounded-2xl p-4 flex flex-col h-[calc(100vh-140px)] sticky top-24">
+                    <div class="mb-4">
+                        <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-400 mb-2">候選人名單</h2>
+                        
+                        <!-- 搜尋過濾器 -->
+                        <div class="relative mb-3">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">
+                                <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                            </span>
+                            <input type="text" v-model="searchQuery" placeholder="搜尋姓名、編號或組別..." 
+                                   class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-200 placeholder-slate-500">
+                        </div>
+
+                        <!-- 狀態篩選 Tabs -->
+                        <div class="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] text-center font-bold">
+                            <button @click="candidateFilter = 'all'" :class="['py-1 rounded', candidateFilter === 'all' ? 'bg-slate-850 text-white' : 'text-slate-500 hover:text-slate-300']">全部</button>
+                            <button @click="candidateFilter = 'graded'" :class="['py-1 rounded', candidateFilter === 'graded' ? 'bg-slate-850 text-green-400' : 'text-slate-500 hover:text-slate-300']">已評</button>
+                            <button @click="candidateFilter = 'ungraded'" :class="['py-1 rounded', candidateFilter === 'ungraded' ? 'bg-slate-850 text-yellow-500' : 'text-slate-500 hover:text-slate-300']">未評</button>
+                            <button @click="candidateFilter = 'veto'" :class="['py-1 rounded', candidateFilter === 'veto' ? 'bg-slate-850 text-red-400' : 'text-slate-500 hover:text-slate-300']">VETO</button>
+                        </div>
+                    </div>
+
+                    <!-- 候選人滾動列表 -->
+                    <div class="flex-1 overflow-y-auto space-y-2 pr-1">
+                        <button v-for="c in filteredCandidates" :key="c.id"
+                                @click="selectCandidate(c.id)"
+                                :class="['w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between',
+                                         currentCandidateId == c.id 
+                                         ? 'bg-blue-600/10 border-blue-500 text-white shadow-sm' 
+                                         : 'bg-slate-900/50 hover:bg-slate-850 border-slate-800/50 text-slate-300']">
+                            <div class="flex items-center gap-2.5">
+                                <div :class="['w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black', getGroupClass(c.group)]">
+                                    {{ c.code }}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-sm">{{ c.name }}</div>
+                                    <div class="text-[10px] text-slate-400 flex items-center gap-1">
+                                        <span>組別 {{ c.group }}</span>
+                                        <span>•</span>
+                                        <span>進度 {{ getCandidateProgressPercent(currentExaminerId, c.id) }}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <!-- Veto 標示 -->
+                                <span v-if="isCandidateVetoedByExaminer(currentExaminerId, c.id)" 
+                                      class="bg-red-500/20 text-red-400 text-[10px] px-1.5 py-0.5 rounded font-extrabold border border-red-500/30 animate-pulse">
+                                    VETO
+                                </span>
+                                <!-- 完成打勾 -->
+                                <i v-else-if="isCandidateGradingComplete(currentExaminerId, c.id)" 
+                                   class="fa-solid fa-circle-check text-green-500 text-xs"></i>
+                            </div>
+                        </button>
+                        <div v-if="filteredCandidates.length === 0" class="text-center py-8 text-slate-500 text-xs font-medium">
+                            沒有符合篩選條件的候選人
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- 中間：4D 評分主面板 -->
+                <section class="lg:col-span-6 space-y-6">
+                    
+                    <!-- 候選人詳情卡 & 總分 (包含 Veto 視覺特效) -->
+                    <div :class="['glass-card rounded-2xl p-6 relative overflow-hidden transition-all duration-300', 
+                                 isCurrentCandidateVetoed ? 'veto-global-pulse border-red-500 bg-red-950/20' : '']">
+                        
+                        <!-- 蓋章疊加 -->
+                        <div v-if="isCurrentCandidateVetoed" class="veto-stamp-overlay">
+                            VETO / 不予錄用
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
+                            <div>
+                                <span class="text-xs font-extrabold text-blue-400 uppercase tracking-widest px-2.5 py-0.5 bg-blue-500/10 rounded-full border border-blue-500/20">
+                                    第 {{ currentCandidate.code }} 號候選人
+                                </span>
+                                <h2 class="text-2xl font-black text-white mt-1.5 flex items-center gap-2">
+                                    {{ currentCandidate.name }}
+                                    <span :class="['text-xs font-bold px-2 py-0.5 rounded-md', getGroupClass(currentCandidate.group)]">
+                                        {{ currentCandidate.group }}組
+                                    </span>
+                                </h2>
+                            </div>
+
+                            <!-- 總分區塊 -->
+                            <div :class="['px-6 py-3 rounded-2xl text-center shadow-lg border transition-all duration-300 min-w-[140px]', 
+                                         isCurrentCandidateVetoed 
+                                         ? 'bg-red-500/10 border-red-500/30 text-red-400' 
+                                         : 'bg-slate-900 border-slate-800 text-blue-400']">
+                                <div class="text-[10px] font-black uppercase tracking-wider mb-0.5">
+                                    {{ isCurrentCandidateVetoed ? '⚠️ 評分鎖定 (VETO)' : '當前評分總分' }}
+                                </div>
+                                <div class="text-3xl font-black flex items-baseline justify-center gap-1 font-mono">
+                                    <span :class="isCurrentCandidateVetoed ? 'text-red-500' : 'text-blue-400'">
+                                        {{ isCurrentCandidateVetoed ? '0' : currentTotalScore }}
+                                    </span>
+                                    <span class="text-xs text-slate-500">/ 20</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 考官評語備註 -->
+                        <div class="mt-4 pt-4 border-t border-slate-800/60 relative z-10">
+                            <label class="text-xs font-extrabold text-slate-400 flex items-center gap-1.5 mb-1.5">
+                                <i class="fa-solid fa-comment-dots text-blue-500"></i>
+                                考官觀察備註 (將自動儲存)
+                            </label>
+                            <textarea v-model="currentComment" placeholder="請在此輸入對此候選人的具體行為觀察、邏輯表現或協作態度紀錄..."
+                                      class="w-full bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-200 placeholder-slate-600 resize-none h-16 transition-all"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 4個評分維度 -->
+                    <div class="space-y-6">
+                        <div v-for="(dim, idx) in dimensions" :key="idx" 
+                             :class="['glass-card rounded-2xl p-6 transition-all duration-300 border relative overflow-hidden',
+                                      currentScores[idx] === 1 ? 'border-red-500/40 bg-red-950/10' : 'border-slate-800/80',
+                                      activeDimensionFocus === idx ? 'ring-1 ring-blue-500 border-transparent shadow-md shadow-blue-500/5' : '']"
+                             @mouseenter="activeDimensionFocus = idx">
+                            
+                            <!-- 維度標題 -->
+                            <div class="flex items-start justify-between gap-4 mb-3">
+                                <div>
+                                    <h3 class="text-md font-extrabold text-white flex items-center gap-2">
+                                        <span class="w-5 h-5 rounded bg-blue-500/10 text-blue-400 text-xs font-mono font-bold flex items-center justify-center border border-blue-500/20">
+                                            {{ idx + 1 }}
+                                        </span>
+                                        {{ dim.title }}
+                                    </h3>
+                                    <p class="text-xs text-slate-400 mt-1 pl-7 bg-slate-900/50 py-1.5 px-3 rounded-lg border border-slate-800/40 inline-flex items-center gap-1.5">
+                                        <i class="fa-solid fa-magnifying-glass text-[10px] text-blue-500"></i>
+                                        <span><strong>觀察情境：</strong>{{ dim.context }}</span>
+                                    </p>
+                                </div>
+                                <span v-if="currentScores[idx] !== null" class="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                                    得分: {{ currentScores[idx] }}
+                                </span>
+                            </div>
+
+                            <!-- 5個行為錨定評分按鈕 -->
+                            <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 mt-4">
+                                <button v-for="score in 5" :key="score"
+                                        @click="setScore(idx, 6 - score)"
+                                        :class="['score-btn p-3 rounded-xl border text-left flex flex-col justify-between min-h-[90px]',
+                                                 currentScores[idx] === (6 - score) 
+                                                 ? getActiveColorClass(6 - score) 
+                                                 : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-850 hover:border-slate-700 text-slate-300']">
+                                    <div class="flex justify-between items-center w-full mb-1.5">
+                                        <span class="font-black text-sm" :class="currentScores[idx] === (6 - score) ? 'text-white' : 'text-slate-400'">
+                                            {{ 6 - score }} 分
+                                        </span>
+                                        <i v-if="currentScores[idx] === (6 - score)" class="fa-solid fa-circle-check text-xs"></i>
+                                    </div>
+                                    <span class="text-[10px] leading-relaxed text-slate-400 font-medium overflow-hidden h-[48px] line-clamp-3">
+                                        {{ dim.criteria[6 - score] }}
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 右側：數理模型視覺化 & 動態雷達圖 -->
+                <section class="lg:col-span-3 space-y-6 sticky top-24">
+                    
+                    <!-- 雷達圖卡片 -->
+                    <div class="glass-card rounded-2xl p-4 flex flex-col items-center">
+                        <h3 class="text-sm font-extrabold uppercase tracking-wider text-slate-400 w-full mb-3 flex items-center justify-between">
+                            <span><i class="fa-solid fa-chart-pie text-blue-500 mr-1.5"></i>4D 能力雷達圖</span>
+                            <span class="text-[10px] text-slate-500 font-medium">即時更新</span>
+                        </h3>
+                        <div class="relative w-full h-56">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-2 text-center w-full border-t border-slate-800/80 pt-2 flex justify-center gap-3">
+                            <span class="flex items-center gap-1">
+                                <span class="w-2.5 h-1 bg-blue-500 rounded"></span> 您的打分
+                            </span>
+                            <span class="flex items-center gap-1">
+                                <span class="w-2.5 h-1 border border-dashed border-yellow-500 rounded"></span> 全體平均
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 🧠 智力夥伴提醒 -->
+                    <div class="bg-indigo-950/40 border border-indigo-500/20 text-indigo-200 rounded-2xl p-5 shadow-md">
+                        <h3 class="text-xs font-black uppercase tracking-wider mb-3 flex items-center gap-1.5 text-indigo-400 border-b border-indigo-500/10 pb-2">
+                            <i class="fa-solid fa-lightbulb"></i>
+                            🧠 行為錨定智力夥伴提醒
+                        </h3>
+                        <ul class="text-[11px] space-y-3 leading-relaxed text-slate-300 font-medium">
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-indigo-400 font-bold mt-0.5">📍</span> 
+                                <span><strong>維度 1 (吸收力):</strong> 重點觀察其是否能快速理解「水位上升即物體體積」，排版修改是否有視覺層次與重點。</span>
+                            </li>
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-indigo-400 font-bold mt-0.5">📍</span> 
+                                <span><strong>維度 2 (協作力):</strong> 觀察是否在小組中去 Ego，能否積極聆聽非獨裁，如何面對質疑並虛心回應。</span>
+                            </li>
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-indigo-400 font-bold mt-0.5">📍</span> 
+                                <span><strong>維度 3 (轉化力):</strong> 觀察圖解是否畫出「水上升的概念」或生活化比喻，Pitching 時是否流暢不背書。</span>
+                            </li>
+                            <li class="flex items-start gap-1.5">
+                                <span class="text-indigo-400 font-bold mt-0.5">📍</span> 
+                                <span><strong>維度 4 (靈魂力):</strong> 檢查回覆逐字稿，是否精準接住 WhatsApp 訊息中「覺得自己蠢」等痛點與情緒。</span>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+            </div>
+
+            <!-- TAB 2: 總控儀表板 -->
+            <div v-show="currentTab === 'admin'" class="space-y-6">
+                
+                <!-- 數據匯報頂欄卡片 -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="glass-card rounded-2xl p-5 border-l-4 border-blue-500 flex items-center justify-between">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold">候選人總數</span>
+                            <div class="text-2xl font-black text-white font-mono mt-1">20 人</div>
+                        </div>
+                        <i class="fa-solid fa-users text-2xl text-slate-600"></i>
+                    </div>
+                    <div class="glass-card rounded-2xl p-5 border-l-4 border-emerald-500 flex items-center justify-between">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold">至少1考官已評</span>
+                            <div class="text-2xl font-black text-emerald-400 font-mono mt-1">{{ totalGradedCount }} / 20</div>
+                        </div>
+                        <i class="fa-solid fa-circle-check text-2xl text-slate-600"></i>
+                    </div>
+                    <div class="glass-card rounded-2xl p-5 border-l-4 border-yellow-500 flex items-center justify-between">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold">全考官完成度</span>
+                            <div class="text-2xl font-black text-yellow-500 font-mono mt-1">{{ fullGradedCount }} / 20</div>
+                        </div>
+                        <i class="fa-solid fa-hourglass-half text-2xl text-slate-600"></i>
+                    </div>
+                    <div class="glass-card rounded-2xl p-5 border-l-4 border-red-500 flex items-center justify-between">
+                        <div>
+                            <span class="text-xs text-slate-400 font-bold">觸發 VETO 候選人</span>
+                            <div class="text-2xl font-black text-red-400 font-mono mt-1">{{ vetoCountGlobal }} 人</div>
+                        </div>
+                        <i class="fa-solid fa-ban text-2xl text-slate-600"></i>
+                    </div>
+                </div>
+
+                <!-- 儀表板快速操作列 -->
+                <div class="glass-card rounded-2xl p-4 flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-800/40">
+                    <div class="text-xs text-slate-400 font-bold flex items-center gap-1.5">
+                        <i class="fa-solid fa-bolt-lightning text-amber-500 text-sm"></i>
+                        <span>儀表板快速操作列：</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2.5 w-full md:w-auto">
+                        <button @click="exportCandidatesExecutiveSummary" 
+                                class="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-emerald-600/15 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-file-excel"></i> 📥 匯出綜合得分表 (Excel)
+                        </button>
+                        <button @click="exportToCSV" 
+                                class="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/15 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-table"></i> 📥 匯出詳細評分矩陣 (Excel)
+                        </button>
+                        <button @click="currentTab = 'candidate_mgr'" 
+                                class="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2 px-4 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-users-gear"></i> ⚙️ 候選人名單與數據管理
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 排行榜與衝突分析 -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    
+                    <!-- 即時排行榜 (8/12) -->
+                    <div class="lg:col-span-7 glass-card rounded-2xl p-6">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                            <div>
+                                <h3 class="text-lg font-black text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-trophy text-yellow-500"></i>
+                                    即時綜合排行榜
+                                </h3>
+                                <p class="text-xs text-slate-400 mt-0.5">自動加權計算所有考官之評分平均值（不含 Veto 一票否決者）</p>
+                            </div>
+                            
+                            <!-- 排序切換 -->
+                            <div class="flex bg-slate-950 border border-slate-800 p-0.5 rounded-lg text-xs font-bold">
+                                <button @click="leaderboardSort = 'score'" :class="['px-3 py-1.5 rounded', leaderboardSort === 'score' ? 'bg-blue-600 text-white' : 'text-slate-500']">按平均分</button>
+                                <button @click="leaderboardSort = 'group'" :class="['px-3 py-1.5 rounded', leaderboardSort === 'group' ? 'bg-blue-600 text-white' : 'text-slate-500']">按組別</button>
+                            </div>
+                        </div>
+
+                        <!-- 表格 -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-800/80 text-[11px] font-black tracking-wider uppercase text-slate-400">
+                                        <th class="py-3 px-2">排名</th>
+                                        <th class="py-3 px-3">候選人</th>
+                                        <th class="py-3 px-2">組別</th>
+                                        <th class="py-3 px-3">已評考官</th>
+                                        <th class="py-3 px-3">綜合平均總分</th>
+                                        <th class="py-3 px-2">錄用狀態</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800/50 text-xs">
+                                    <tr v-for="(row, idx) in leaderboard" :key="row.id" 
+                                        class="hover:bg-slate-850/40 transition-colors group cursor-pointer"
+                                        @click="navigateToGrading(row.id)">
+                                        <td class="py-3 px-2 font-mono font-black text-sm">
+                                            <span v-if="row.isVetoed" class="text-slate-600">-</span>
+                                            <span v-else-if="idx === 0" class="text-yellow-500"><i class="fa-solid fa-medal"></i> 1</span>
+                                            <span v-else-if="idx === 1" class="text-slate-300"><i class="fa-solid fa-medal"></i> 2</span>
+                                            <span v-else-if="idx === 2" class="text-amber-600"><i class="fa-solid fa-medal"></i> 3</span>
+                                            <span v-else class="text-slate-400">{{ idx + 1 }}</span>
+                                        </td>
+                                        <td class="py-3 px-3">
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-mono text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-black">
+                                                    {{ row.code }}
+                                                </span>
+                                                <span class="font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
+                                                    {{ row.name }}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="py-3 px-2">
+                                            <span :class="['px-2 py-0.5 rounded text-[10px] font-bold', getGroupClass(row.group)]">
+                                                {{ row.group }}組
+                                            </span>
+                                        </td>
+                                        <td class="py-3 px-3 text-slate-400 font-mono font-bold">
+                                            {{ row.gradedByCount }} / 6
+                                        </td>
+                                        <td class="py-3 px-3 font-mono">
+                                            <div v-if="row.isVetoed" class="text-red-500 font-extrabold flex items-center gap-1">
+                                                <i class="fa-solid fa-ban text-[10px]"></i> 0 (VETO)
+                                            </div>
+                                            <div v-else-if="row.gradedByCount === 0" class="text-slate-600">
+                                                未評分
+                                            </div>
+                                            <div v-else class="text-blue-400 font-extrabold text-sm flex items-center gap-2">
+                                                <span>{{ row.averageScore.toFixed(2) }}</span>
+                                                <div class="w-16 bg-slate-800 h-1 rounded-full overflow-hidden hidden sm:block">
+                                                    <div class="bg-blue-500 h-full" :style="{ width: (row.averageScore / 20 * 100) + '%' }"></div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="py-3 px-2">
+                                            <span v-if="row.isVetoed" class="bg-red-500/10 text-red-500 border border-red-500/20 text-[10px] px-2 py-0.5 rounded font-black animate-pulse">
+                                                一票否決 (不錄用)
+                                            </span>
+                                            <span v-else-if="row.gradedByCount === 0" class="text-slate-600 text-[10px]">
+                                                等待評分
+                                            </span>
+                                            <span v-else-if="idx < 5" class="bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] px-2 py-0.5 rounded font-black">
+                                                卓越 (推薦錄用)
+                                            </span>
+                                            <span v-else class="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] px-2 py-0.5 rounded font-black">
+                                                合格 (儲備觀察)
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 考官共識度分析 (5/12) -->
+                    <div class="lg:col-span-5 glass-card rounded-2xl p-6 space-y-6">
+                        <div>
+                            <h3 class="text-lg font-black text-white flex items-center gap-2">
+                                <i class="fa-solid fa-scale-balanced text-teal-400"></i>
+                                考官共識度校準分析
+                            </h3>
+                            <p class="text-xs text-slate-400 mt-0.5">標示跨考官評分落差過大（最大分數差 ≥ 4分）或 Veto 嚴重分歧之爭議候選人，以進行團隊校準討論。</p>
+                        </div>
+
+                        <div class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                            <div v-for="c in controversyList" :key="c.id"
+                                 class="p-4 rounded-xl border flex flex-col gap-3 transition-all hover:bg-slate-850/30"
+                                 :class="c.status === 'severe' ? 'bg-red-950/10 border-red-500/30' : 'bg-slate-900/40 border-slate-800/80'">
+                                
+                                <div class="flex justify-between items-start">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-mono bg-slate-800 px-1.5 py-0.5 rounded font-bold text-slate-400">
+                                            {{ c.code }}
+                                        </span>
+                                        <span class="font-extrabold text-sm text-white">{{ c.name }}</span>
+                                        <span :class="['text-[9px] px-1.5 py-0.5 rounded font-bold', getGroupClass(c.group)]">
+                                            {{ c.group }}組
+                                        </span>
+                                    </div>
+                                    <span :class="['text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider',
+                                                 c.status === 'severe' ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30']">
+                                        {{ c.status === 'severe' ? '🚨 嚴重分歧 / 否決爭議' : '⚠️ 分數分歧较大' }}
+                                    </span>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-4 text-[10px] text-slate-400 bg-slate-950/80 p-3 rounded-lg border border-slate-850/80 font-mono">
+                                    <div>最大落差: <span class="text-white font-bold text-xs">{{ c.scoreGap }} 分</span></div>
+                                    <div>分數標準差: <span class="text-white font-bold text-xs">{{ c.stdDev.toFixed(2) }}</span></div>
+                                    <div class="col-span-2 text-slate-400 mt-1">
+                                        <div>各考官打分統計：</div>
+                                        <div class="flex flex-wrap gap-1.5 mt-1.5">
+                                            <span v-for="e in examiners" :key="e.id"
+                                                  v-if="hasExaminerScored(e.id, c.id)"
+                                                  class="bg-slate-850 text-slate-300 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1 text-[9px]">
+                                                <span>{{ e.name.split(' ')[0] }}:</span>
+                                                <span v-if="isCandidateVetoedByExaminer(e.id, c.id)" class="text-red-500 font-black">VETO</span>
+                                                <span v-else class="text-blue-400 font-extrabold">{{ getExaminerTotalScoreForCandidate(e.id, c.id) }}分</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-[10px] text-slate-400 italic">
+                                    <i class="fa-solid fa-triangle-exclamation mr-1 text-amber-500"></i>
+                                    <span>校準建議：{{ c.status === 'severe' ? '存在部分考官否決但部分高分現象，必須開啟共識討論！' : '考官間判斷基準不一，建議確認 4D 行為觀察錨定細節。' }}</span>
+                                </div>
+                            </div>
+                            
+                            <div v-if="controversyList.length === 0" class="text-center py-12 text-slate-500 text-xs">
+                                <i class="fa-solid fa-circle-check text-green-500 text-lg mb-2 block"></i>
+                                考官共識度完美契合！未偵測到顯著評分落差。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 考官評分進度與分數矩陣分佈 -->
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-lg font-black text-white flex items-center gap-2 mb-4">
+                        <i class="fa-solid fa-table-cells text-blue-400"></i>
+                        評分分佈總覽矩陣 (共識校準底表)
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="border-b border-slate-800/80 text-[10px] font-black text-slate-400">
+                                    <th class="py-2 px-2">候選人 (ID)</th>
+                                    <th v-for="e in examiners" :key="e.id" class="py-2 px-2 text-center border-l border-slate-800/40">
+                                        {{ e.name.split(' ')[0] }}
+                                    </th>
+                                    <th class="py-2 px-3 text-center border-l border-slate-800/80">極差</th>
+                                    <th class="py-2 px-3 text-center">標準差</th>
+                                    <th class="py-2 px-2 text-center">共識狀態</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/30">
+                                <tr v-for="c in candidates" :key="c.id" class="hover:bg-slate-850/20 font-mono">
+                                    <td class="py-2.5 px-2 font-bold text-slate-300">
+                                        {{ c.code }} - {{ c.name }}
+                                    </td>
+                                    <td v-for="e in examiners" :key="e.id" class="py-2.5 px-2 text-center border-l border-slate-800/30">
+                                        <span v-if="isCandidateVetoedByExaminer(e.id, c.id)" class="text-red-500 font-extrabold" title="VETO">🚨 V</span>
+                                        <span v-else-if="hasExaminerScored(e.id, c.id)" class="text-slate-200 font-bold">
+                                            {{ getExaminerTotalScoreForCandidate(e.id, c.id) }}
+                                        </span>
+                                        <span v-else class="text-slate-700">-</span>
+                                    </td>
+                                    
+                                    <!-- 統計數據 -->
+                                    <td class="py-2.5 px-3 text-center font-bold border-l border-slate-800/80" 
+                                        :class="getDiscrepancyColor(getCandidateScoreGap(c.id))">
+                                        {{ getCandidateScoreGap(c.id) !== null ? getCandidateScoreGap(c.id) + '分' : '-' }}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-center text-slate-400">
+                                        {{ getCandidateScoreStdDev(c.id) !== null ? getCandidateScoreStdDev(c.id).toFixed(1) : '-' }}
+                                    </td>
+                                    <td class="py-2.5 px-2 text-center text-[10px] font-bold">
+                                        <span v-if="hasCandidateVetoConflict(c.id)" class="text-red-500 bg-red-500/10 px-1 rounded">否決分歧</span>
+                                        <span v-else-if="getCandidateScoreGap(c.id) >= 5" class="text-orange-500 bg-orange-500/10 px-1 rounded">高分歧</span>
+                                        <span v-else-if="getCandidateScoreGap(c.id) >= 3" class="text-yellow-500 bg-yellow-500/10 px-1 rounded">中分歧</span>
+                                        <span v-else-if="getCandidateScoreGap(c.id) !== null" class="text-green-500 bg-green-500/10 px-1 rounded">高度共識</span>
+                                        <span v-else class="text-slate-600">-</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 數據管理快捷導航 -->
+                <div class="glass-card rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-center gap-4 border border-slate-800/60">
+                    <div>
+                        <h4 class="text-sm font-extrabold text-white flex items-center gap-1.5">
+                            <i class="fa-solid fa-users-gear text-blue-500"></i>
+                            需要修改候選人名單、匯入 Excel 或進行系統重置？
+                        </h4>
+                        <p class="text-xs text-slate-400 mt-1">我們已將所有名單管理與 Excel 匯出入移至專屬的「候選人與數據管理」控制台。</p>
+                    </div>
+                    <button @click="currentTab = 'candidate_mgr'" 
+                            class="bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-blue-600/15 flex items-center gap-1.5 shrink-0">
+                        <i class="fa-solid fa-gears"></i> 前往數據管理中心
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 3: 候選人與數據管理 -->
+            <div v-show="currentTab === 'candidate_mgr'" class="space-y-6">
+                <!-- 數據與候選人管理中心 -->
+                <div class="glass-card rounded-2xl p-6">
+                    <h3 class="text-lg font-black text-white flex items-center gap-2 mb-3">
+                        <i class="fa-solid fa-database text-blue-500"></i>
+                        數據與候選人管理中心
+                    </h3>
+                    <p class="text-xs text-slate-400 mb-5">
+                        本中心支援手動編輯、新增與刪除候選人，以解決「人名修改」與「新增候選人」之彈性需求。同時，提供全方位 Excel / CSV 標準格式的匯出入功能。
+                    </p>
+
+                    <!-- Excel 匯出入中心 -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <!-- 1. 當前考官評分表匯出入 -->
+                        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 flex flex-col justify-between">
+                            <div>
+                                <h4 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 text-blue-400">
+                                    <i class="fa-solid fa-file-invoice"></i> 考官個別評分表
+                                </h4>
+                                <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                                    匯出或匯入當前選定考官（<span class="text-blue-400 font-bold">{{ (examiners.find(e => e.id == currentExaminerId) || {}).name || '' }}</span>）的評分明細與名單。
+                                </p>
+                            </div>
+                            <div class="space-y-2">
+                                <button @click="exportCandidatesAndScores" 
+                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-blue-600/15 flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-file-export"></i> 匯出當前考官評分 (CSV)
+                                </button>
+                                <div class="relative w-full">
+                                    <input type="file" ref="scoringFileInput" @change="importCandidatesAndScores" accept=".csv" class="hidden">
+                                    <button @click="$refs.scoringFileInput.click()" 
+                                            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2 px-4 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5">
+                                        <i class="fa-solid fa-file-import"></i> 匯入名單與評分 (CSV)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. 全體考官綜合得分表匯出 -->
+                        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 flex flex-col justify-between">
+                            <div>
+                                <h4 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 text-emerald-400">
+                                    <i class="fa-solid fa-square-poll-horizontal"></i> 候選人綜合得分表
+                                </h4>
+                                <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                                    匯出全體 6 位考官綜合平均後的精簡報告。包含每位候選人的錄用狀態、平均總分、4D能力各項平均得分。
+                                </p>
+                            </div>
+                            <button @click="exportCandidatesExecutiveSummary" 
+                                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl transition-all shadow-md shadow-emerald-600/15 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-file-excel"></i> 匯出綜合得分表 (Excel 可開)
+                            </button>
+                        </div>
+
+                        <!-- 3. 全體考官詳細評分矩陣匯出 -->
+                        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 flex flex-col justify-between">
+                            <div>
+                                <h4 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 text-indigo-400">
+                                    <i class="fa-solid fa-table-cells-large"></i> 全考官評分詳細矩陣
+                                </h4>
+                                <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                                    匯出最完整的評分底表。包含每位候選人在各考官下的4D得分明細、總分、Veto標記，以及考官備註評語匯整。
+                                </p>
+                            </div>
+                            <div class="space-y-2">
+                                <button @click="exportToCSV" 
+                                        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-indigo-600/15 flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-file-csv"></i> 匯出詳細評分矩陣 (CSV)
+                                </button>
+                                <div class="relative w-full">
+                                    <input type="file" ref="csvFileInput2" @change="importFromCSV" accept=".csv" class="hidden">
+                                    <button @click="$refs.csvFileInput2.click()" 
+                                            class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2 px-4 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5">
+                                        <i class="fa-solid fa-upload"></i> 匯入矩陣備份 (CSV)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 系統初始化與仿真 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 pt-4 border-t border-slate-800/60">
+                        <button @click="simulateMockData" 
+                                class="bg-amber-600/15 hover:bg-amber-600 text-amber-400 hover:text-white border border-amber-500/20 font-extrabold text-xs py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 一鍵注入仿真模擬數據 (20位候選人全覆蓋)
+                        </button>
+                        <button @click="clearAllData" 
+                                class="bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 font-extrabold text-xs py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-trash-can"></i> 完全清空系統評分與重置
+                        </button>
+                    </div>
+
+                    <!-- 第二部分：候選人管理面板 -->
+                    <div class="pt-6 border-t border-slate-800/60 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- 新增候選人表單 -->
+                        <div class="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80 h-fit space-y-4">
+                            <h4 class="text-sm font-extrabold text-white flex items-center gap-1.5 border-b border-slate-800/60 pb-2">
+                                <i class="fa-solid fa-user-plus text-blue-500"></i> 新增候選人
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="text-[11px] text-slate-400 block mb-1">編號 (如 21)</label>
+                                        <input type="text" v-model="newCandidateCode" placeholder="請輸入編號" 
+                                               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-blue-400 font-bold">
+                                    </div>
+                                    <div>
+                                        <label class="text-[11px] text-slate-400 block mb-1">分配組別</label>
+                                        <select v-model="newCandidateGroup" 
+                                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-300 font-bold">
+                                            <option value="A">A 組</option>
+                                            <option value="B">B 組</option>
+                                            <option value="C">C 組</option>
+                                            <option value="D">D 組</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[11px] text-slate-400 block mb-1">候選人姓名</label>
+                                    <input type="text" v-model="newCandidateName" placeholder="請輸入姓名" 
+                                           class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-200 font-bold">
+                                </div>
+                                <button @click="addCandidate" 
+                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-blue-600/15 flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-plus"></i> 新增至名單
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 候選人名單與直接編輯列表 (2/3 寬度) -->
+                        <div class="lg:col-span-2 p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80">
+                            <h4 class="text-sm font-extrabold text-white flex items-center justify-between border-b border-slate-800/60 pb-2 mb-4">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-user-pen text-indigo-400"></i>
+                                    候選人名單 (直接在此編輯，系統將即時同步與儲存)
+                                </span>
+                                <span class="text-xs text-slate-400 font-mono">共 {{ candidates.length }} 位候選人</span>
+                            </h4>
+                            
+                            <!-- 候選人編輯表格 -->
+                            <div class="overflow-x-auto max-h-[400px] overflow-y-auto pr-1">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                                            <th class="py-2.5 px-3">編號 (Code)</th>
+                                            <th class="py-2.5 px-3">姓名 (Name)</th>
+                                            <th class="py-2.5 px-3">組別 (Group)</th>
+                                            <th class="py-2 px-3 text-center">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/40">
+                                        <tr v-for="(c, idx) in candidates" :key="c.id" class="hover:bg-slate-850/30">
+                                            <td class="py-2 px-3">
+                                                <input type="text" v-model="c.code" @change="saveToLocalStorage" 
+                                                       class="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-center font-mono font-bold text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                            </td>
+                                            <td class="py-2 px-3">
+                                                <input type="text" v-model="c.name" @change="saveToLocalStorage" 
+                                                       class="w-full max-w-[150px] bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 font-bold text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                            </td>
+                                            <td class="py-2 px-3">
+                                                <select v-model="c.group" @change="saveToLocalStorage"
+                                                        class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold">
+                                                    <option value="A">A 組</option>
+                                                    <option value="B">B 組</option>
+                                                    <option value="C">C 組</option>
+                                                    <option value="D">D 組</option>
+                                                </select>
+                                            </td>
+                                            <td class="py-2 px-3 text-center">
+                                                <button @click="deleteCandidate(c.id)" 
+                                                        class="text-red-500 hover:text-red-400 font-bold text-xs flex items-center gap-1 mx-auto bg-red-500/10 px-2.5 py-1 rounded-lg hover:bg-red-500/20 transition-all">
+                                                    <i class="fa-solid fa-trash-can text-[10px]"></i> 刪除
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 第三部分：考官管理面板 -->
+                    <div class="pt-6 border-t border-slate-800/60 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- 新增考官表單 -->
+                        <div class="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80 h-fit space-y-4">
+                            <h4 class="text-sm font-extrabold text-white flex items-center gap-1.5 border-b border-slate-800/60 pb-2">
+                                <i class="fa-solid fa-user-plus text-blue-500"></i> 新增考官
+                            </h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-[11px] text-slate-400 block mb-1">考官姓名/職稱 (例如: "陳大文 (Lead)")</label>
+                                    <input type="text" v-model="newExaminerName" placeholder="請輸入姓名與職稱" 
+                                           class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-200 font-bold"
+                                           @keyup.enter="addExaminer">
+                                </div>
+                                <button @click="addExaminer" 
+                                        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs py-2 px-4 rounded-xl transition-all shadow-md shadow-blue-600/15 flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-plus"></i> 新增至考官名單
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 考官名單與直接編輯列表 (2/3 寬度) -->
+                        <div class="lg:col-span-2 p-5 rounded-2xl bg-slate-900/40 border border-slate-800/80">
+                            <h4 class="text-sm font-extrabold text-white flex items-center justify-between border-b border-slate-800/60 pb-2 mb-4">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-user-tie text-indigo-400"></i>
+                                    考官名單 (直接在此編輯，系統將即時同步與儲存)
+                                </span>
+                                <span class="text-xs text-slate-400 font-mono">共 {{ examiners.length }} 位考官</span>
+                            </h4>
+                            
+                            <!-- 考官編輯表格 -->
+                            <div class="overflow-x-auto max-h-[300px] overflow-y-auto pr-1">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                                            <th class="py-2.5 px-3">編號 (ID)</th>
+                                            <th class="py-2.5 px-3">考官姓名/職稱 (Name)</th>
+                                            <th class="py-2 px-3 text-center">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/40">
+                                        <tr v-for="(e, idx) in examiners" :key="e.id" class="hover:bg-slate-850/30">
+                                            <td class="py-2 px-3 font-mono font-bold text-slate-400">
+                                                ID: {{ e.id }}
+                                            </td>
+                                            <td class="py-2 px-3">
+                                                <input type="text" v-model="e.name" @change="saveToLocalStorage" 
+                                                       class="w-full max-w-[300px] bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 font-bold text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                            </td>
+                                            <td class="py-2 px-3 text-center">
+                                                <button @click="deleteExaminer(e.id)" :disabled="examiners.length <= 1"
+                                                        class="text-red-500 hover:text-red-400 disabled:opacity-40 font-bold text-xs flex items-center gap-1 mx-auto bg-red-500/10 px-2.5 py-1 rounded-lg hover:bg-red-500/20 transition-all">
+                                                    <i class="fa-solid fa-trash-can text-[10px]"></i> 刪除
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </main>
+
+        <!-- 頁尾 -->
+        <footer class="bg-slate-950 border-t border-slate-850 px-6 py-4 text-center text-xs text-slate-500 font-bold">
+            © 2026 Uni+ KOC 創始黑客松 | 行為錨定 4D 智力評分矩陣系統 | Specially Designed for Mathematic-Intuitive Calibration
+        </footer>
+    </div>
+
+    <!-- 邏輯腳本編寫 -->
+    <script>
+        const { createApp } = Vue;
+
+        // 全局考官預設名單 (6位)
+        const DEFAULT_EXAMINERS = [
+            { id: 1, name: '1. 陳大文 (Lead)' },
+            { id: 2, name: '2. 林美玲 (Senior)' },
+            { id: 3, name: '3. 張家豪 (Tech)' },
+            { id: 4, name: '4. 黃曉彤 (HR)' },
+            { id: 5, name: '5. 吳志強 (Partner)' },
+            { id: 6, name: '6. 梁雅雯 (Mentor)' }
+        ];
+
+        // 全局候選人預設名單 (20位)
+        const DEFAULT_CANDIDATES = [
+            { id: 1, name: '張小明', code: '01', group: 'A' },
+            { id: 2, name: '李嘉欣', code: '02', group: 'A' },
+            { id: 3, name: '王大偉', code: '03', group: 'B' },
+            { id: 4, name: '陳志軒', code: '04', group: 'B' },
+            { id: 5, name: '楊倩婷', code: '05', group: 'C' },
+            { id: 6, name: '趙子龍', code: '06', group: 'C' },
+            { id: 7, name: '劉德華', code: '07', group: 'D' },
+            { id: 8, name: '郭富城', code: '08', group: 'D' },
+            { id: 9, name: '黎明', code: '09', group: 'A' },
+            { id: 10, name: '張學友', code: '10', group: 'B' },
+            { id: 11, name: '周杰倫', code: '11', group: 'C' },
+            { id: 12, name: '林俊傑', code: '12', group: 'D' },
+            { id: 13, name: '蔡依林', code: '13', group: 'A' },
+            { id: 14, name: '鄧紫棋', code: '14', group: 'B' },
+            { id: 15, name: '謝霆鋒', code: '15', group: 'C' },
+            { id: 16, name: '陳奕迅', code: '16', group: 'D' },
+            { id: 17, name: '容祖兒', code: '17', group: 'A' },
+            { id: 18, name: '古天樂', code: '18', group: 'B' },
+            { id: 19, name: '梁朝偉', code: '19', group: 'C' },
+            { id: 20, name: '張曼玉', code: '20', group: 'D' }
+        ];
+
+        createApp({
+            data() {
+                return {
+                    currentTab: 'scoring',
+                    candidateFilter: 'all',
+                    searchQuery: '',
+                    leaderboardSort: 'score',
+                    
+                    // 考官與候選人
+                    examiners: DEFAULT_EXAMINERS,
+                    candidates: DEFAULT_CANDIDATES,
+                    
+                    currentExaminerId: 1,
+                    currentCandidateId: 1,
+
+                    // 儲存評分矩陣結構: key: "examinerId_candidateId" -> value: [s1, s2, s3, s4] (四維得分，預設 null)
+                    scores: {},
+                    // 儲存考官評語結構: key: "examinerId_candidateId" -> value: "String Comment"
+                    comments: {},
+
+                    // 新增候選人表單暫存
+                    newCandidateName: '',
+                    newCandidateCode: '21',
+                    newCandidateGroup: 'A',
+
+                    // 新增考官表單暫存
+                    newExaminerName: '',
+
+                    // 雷達圖實體
+                    chartInstance: null,
+
+                    // 維度與錨定
+                    dimensions: [
+                        {
+                            title: '維度 1：【吸收力】邏輯性 ✖️ 學習新事物',
+                            context: '處理排版任務及面對「球體體積」突發變數時的反應。',
+                            criteria: {
+                                5: '迅速重構：立刻冷靜代入計算；排版修正極佳，重點突出。',
+                                4: '快速理解：順利算出體積；有修正排版，層次稍弱。',
+                                3: '被動接受：計算卡關需依賴隊友；排版僅基本隔行。',
+                                2: '邏輯混亂：搞錯「水位上升=物件體積」核心邏輯。',
+                                1: '🚨 拒絕學習/放棄：抱怨並放棄思考；無視排版任務。'
+                            }
+                        },
+                        {
+                            title: '維度 2：【協作力】耐性 ✖️ 邊界感與去 Ego',
+                            context: '小組討論過程，以及面對導師 Q&A 質疑時的反應。',
+                            criteria: {
+                                5: '高情商應對：極佳防禦與反思；主動引導落後隊友。',
+                                4: '積極聆聽：不搶話，整合意見；面對質疑態度虛心。',
+                                3: '和平共處：專注自己部分；面對質疑略顯緊張但能答。',
+                                2: '自我中心：常打斷隊友；急於證明自己是對的。',
+                                1: '🚨 強勢獨裁/零參與：推翻隊友獨裁；發呆；發脾氣。'
+                            }
+                        },
+                        {
+                            title: '維度 3：【轉化力】畫面感 ✖️ 敏捷與降維表達',
+                            context: '最終的「降維圖解」與 Pitching 時的表達能力。',
+                            criteria: {
+                                5: '秒懂比喻：畫出動態概念；Pitching 用極具共鳴生活比喻。',
+                                4: '清晰易明：圖解有清晰流程；Pitching 流暢解釋 3D 幾何。',
+                                3: '中規中矩：重畫題目寫滿公式；Pitching 像背書。',
+                                2: '照本宣科：圖解混亂；直接照讀 AI 文字，無降維。',
+                                1: '🚨 語無倫次：表達極度混亂，越解釋越複雜。'
+                            }
+                        },
+                        {
+                            title: '維度 4：【靈魂力】情緒錨定 ✖️ 啟發式提問',
+                            context: '回覆逐字稿是否精準接住了 WhatsApp 訊息中的痛點。',
+                            criteria: {
+                                5: '精準共情與引導：否定「覺得蠢」，安撫焦慮；反問引導。',
+                                4: '有效安撫：嘗試安撫情緒，給出具體解題起手式。',
+                                3: '表面打氣：空泛正能量，然後直接寫出完整算式。',
+                                2: '冷冰冰解題：無視情緒，100% 講述圓柱體公式。',
+                                1: '🚨 說教與指責：出現破壞安全感言論 (如:點會唔明)。'
+                            }
+                        }
+                    ],
+                    activeDimensionFocus: 0
+                };
+            },
+            computed: {
+                // 當前選中的候選人物件
+                currentCandidate() {
+                    return this.candidates.find(c => c.id == this.currentCandidateId) || this.candidates[0] || { id: 0, name: '無候選人', code: '--', group: 'A' };
+                },
+                // 當前選中候選人 & 當前考官 的評分陣列
+                currentScores() {
+                    const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
+                    if (!this.scores[key]) {
+                        // 初始化
+                        this.scores[key] = [null, null, null, null];
+                    }
+                    return this.scores[key];
+                },
+                // 考官備註雙向綁定
+                currentComment: {
+                    get() {
+                        const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
+                        return this.comments[key] || '';
+                    },
+                    set(val) {
+                        const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
+                        this.comments[key] = val;
+                        this.saveToLocalStorage();
+                    }
+                },
+                // 當前考官對當前候選人是否有一票否決 (1分)
+                isCurrentCandidateVetoed() {
+                    return this.currentScores.includes(1);
+                },
+                // 當前考官對當前候選人的總得分
+                currentTotalScore() {
+                    if (this.isCurrentCandidateVetoed) return 0;
+                    return this.currentScores.reduce((sum, score) => sum + (score || 0), 0);
+                },
+
+                // 左側過濾候選人名單
+                filteredCandidates() {
+                    return this.candidates.filter(c => {
+                        // 1. 搜尋篩選 (姓名, 編號, 組別)
+                        const searchLower = this.searchQuery.trim().toLowerCase();
+                        const matchesSearch = !searchLower || 
+                                              c.name.toLowerCase().includes(searchLower) || 
+                                              c.code.includes(searchLower) || 
+                                              c.group.toLowerCase().includes(searchLower);
+                        if (!matchesSearch) return false;
+
+                        // 2. 狀態分頁篩選
+                        const isComplete = this.isCandidateGradingComplete(this.currentExaminerId, c.id);
+                        const isVeto = this.isCandidateVetoedByExaminer(this.currentExaminerId, c.id);
+                        
+                        if (this.candidateFilter === 'graded') {
+                            return isComplete || this.hasExaminerScored(this.currentExaminerId, c.id);
+                        } else if (this.candidateFilter === 'ungraded') {
+                            return !this.hasExaminerScored(this.currentExaminerId, c.id);
+                        } else if (this.candidateFilter === 'veto') {
+                            return isVeto;
+                        }
+                        return true;
+                    });
+                },
+
+
+                // 儀表板：綜合統計數據
+                totalGradedCount() {
+                    // 計算有多少候選人至少被一位考官評審過
+                    return this.candidates.filter(c => {
+                        return this.examiners.some(e => this.hasExaminerScored(e.id, c.id));
+                    }).length;
+                },
+                fullGradedCount() {
+                    // 多少候選人已被所有6位考官全數評審完畢 (4D皆有值)
+                    return this.candidates.filter(c => {
+                        return this.examiners.every(e => this.isCandidateGradingComplete(e.id, c.id));
+                    }).length;
+                },
+                vetoCountGlobal() {
+                    // 被任何一位考官給出過 Veto 的候選人總數
+                    return this.candidates.filter(c => {
+                        return this.examiners.some(e => this.isCandidateVetoedByExaminer(e.id, c.id));
+                    }).length;
+                },
+
+                // 全球是否有 Veto 衝突 (一考官 veto, 一考官給高分)
+                hasVetoConflictGlobal() {
+                    return this.candidates.some(c => this.hasCandidateVetoConflict(c.id));
+                },
+
+                // 儀表板：即時綜合排行榜
+                leaderboard() {
+                    const list = this.candidates.map(c => {
+                        let totalSum = 0;
+                        let count = 0;
+                        let isVetoed = false;
+
+                        this.examiners.forEach(e => {
+                            if (this.isCandidateVetoedByExaminer(e.id, c.id)) {
+                                isVetoed = true;
+                            }
+                            if (this.hasExaminerScored(e.id, c.id)) {
+                                const examTotal = this.getExaminerTotalScoreForCandidate(e.id, c.id);
+                                if (!this.isCandidateVetoedByExaminer(e.id, c.id)) {
+                                    totalSum += examTotal;
+                                }
+                                count++;
+                            }
+                        });
+
+                        const averageScore = count > 0 ? (totalSum / count) : 0;
+                        const gradedByCount = count;
+
+                        return {
+                            id: c.id,
+                            name: c.name,
+                            code: c.code,
+                            group: c.group,
+                            averageScore,
+                            gradedByCount,
+                            isVetoed
+                        };
+                    });
+
+                    // 排序
+                    if (this.leaderboardSort === 'score') {
+                        return list.sort((a, b) => {
+                            // 否決錄用排最後
+                            if (a.isVetoed && !b.isVetoed) return 1;
+                            if (!a.isVetoed && b.isVetoed) return -1;
+                            
+                            // 分數降序
+                            if (a.averageScore !== b.averageScore) {
+                                return b.averageScore - a.averageScore;
+                            }
+                            // 已評分多者排前
+                            return b.gradedByCount - a.gradedByCount;
+                        });
+                    } else {
+                        // 按組別 & 編號排序
+                        return list.sort((a, b) => {
+                            if (a.group !== b.group) return a.group.localeCompare(b.group);
+                            return a.code.localeCompare(b.code);
+                        });
+                    }
+                },
+
+                // 儀表板：爭議/分歧名單
+                controversyList() {
+                    const list = [];
+                    this.candidates.forEach(c => {
+                        const gap = this.getCandidateScoreGap(c.id);
+                        const hasVetoConflict = this.hasCandidateVetoConflict(c.id);
+                        
+                        if (gap !== null && (gap >= 4 || hasVetoConflict)) {
+                            const std = this.getCandidateScoreStdDev(c.id) || 0;
+                            let status = 'medium';
+                            if (gap >= 6 || hasVetoConflict) {
+                                status = 'severe';
+                            }
+
+                            list.push({
+                                id: c.id,
+                                name: c.name,
+                                code: c.code,
+                                group: c.group,
+                                scoreGap: gap,
+                                stdDev: std,
+                                status: status,
+                                hasVetoConflict
+                            });
+                        }
+                    });
+
+                    // 分歧嚴重度降序
+                    return list.sort((a, b) => {
+                        if (a.status === 'severe' && b.status !== 'severe') return -1;
+                        if (a.status !== 'severe' && b.status === 'severe') return 1;
+                        return b.scoreGap - a.scoreGap;
+                    });
+                }
+            },
+            watch: {
+                currentTab(newVal) {
+                    if (newVal === 'scoring') {
+                        this.$nextTick(() => {
+                            this.updateRadarChart();
+                        });
+                    }
+                },
+                currentExaminerId() {
+                    this.updateRadarChart();
+                },
+                currentCandidateId() {
+                    this.updateRadarChart();
+                },
+                // 當 scores 更新時重繪雷達圖、儲存 LocalStorage
+                scores: {
+                    handler() {
+                        this.saveToLocalStorage();
+                        this.updateRadarChart();
+                    },
+                    deep: true
+                }
+            },
+            methods: {
+                // UI 輔助方法
+                getGroupClass(group) {
+                    if (group === 'A') return 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20';
+                    if (group === 'B') return 'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+                    if (group === 'C') return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                    return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                },
+                getActiveColorClass(score) {
+                    if (score === 5) return 'bg-gradient-to-br from-amber-500/30 to-yellow-600/10 border-amber-500 text-amber-400 ring-2 ring-amber-500/20';
+                    if (score === 4) return 'bg-gradient-to-br from-blue-500/30 to-indigo-600/10 border-blue-500 text-blue-400 ring-2 ring-blue-500/20';
+                    if (score === 3) return 'bg-gradient-to-br from-emerald-500/30 to-teal-600/10 border-emerald-500 text-emerald-400 ring-2 ring-emerald-500/20';
+                    if (score === 2) return 'bg-gradient-to-br from-orange-500/30 to-red-600/10 border-orange-500 text-orange-400 ring-2 ring-orange-500/20';
+                    if (score === 1) return 'bg-gradient-to-br from-red-500/40 to-rose-950/20 border-red-500 text-red-500 ring-4 ring-red-500/30 animate-pulse';
+                    return '';
+                },
+                getDiscrepancyColor(gap) {
+                    if (gap === null) return 'text-slate-700';
+                    if (gap >= 6) return 'text-red-500 font-black bg-red-500/10 rounded px-1.5';
+                    if (gap >= 4) return 'text-orange-500 font-bold bg-orange-500/10 rounded px-1.5';
+                    if (gap >= 2) return 'text-yellow-500 font-medium';
+                    return 'text-green-500 font-bold';
+                },
+
+                // 核心評分行為
+                setScore(dimIndex, score) {
+                    const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
+                    if (!this.scores[key]) {
+                        this.scores[key] = [null, null, null, null];
+                    }
+                    // 更新維度分數
+                    this.scores[key][dimIndex] = score;
+                    this.saveToLocalStorage();
+                },
+                selectCandidate(id) {
+                    this.currentCandidateId = id;
+                },
+                navigateToGrading(id) {
+                    this.currentCandidateId = id;
+                    this.currentTab = 'scoring';
+                },
+
+                // 評分進度統計學
+                hasExaminerScored(examinerId, candidateId) {
+                    const key = `${examinerId}_${candidateId}`;
+                    const arr = this.scores[key];
+                    return arr && arr.some(s => s !== null);
+                },
+                isCandidateGradingComplete(examinerId, candidateId) {
+                    const key = `${examinerId}_${candidateId}`;
+                    const arr = this.scores[key];
+                    return arr && arr.every(s => s !== null);
+                },
+                isCandidateVetoedByExaminer(examinerId, candidateId) {
+                    const key = `${examinerId}_${candidateId}`;
+                    const arr = this.scores[key];
+                    return arr && arr.includes(1);
+                },
+                getCandidateProgressPercent(examinerId, candidateId) {
+                    const key = `${examinerId}_${candidateId}`;
+                    const arr = this.scores[key];
+                    if (!arr) return 0;
+                    const filled = arr.filter(s => s !== null).length;
+                    return Math.round((filled / 4) * 100);
+                },
+                getExaminerGradedCount(examinerId) {
+                    return this.candidates.filter(c => this.hasExaminerScored(examinerId, c.id)).length;
+                },
+                getExaminerTotalScoreForCandidate(examinerId, candidateId) {
+                    if (this.isCandidateVetoedByExaminer(examinerId, candidateId)) return 0;
+                    const key = `${examinerId}_${candidateId}`;
+                    const arr = this.scores[key] || [];
+                    return arr.reduce((sum, score) => sum + (score || 0), 0);
+                },
+
+                // 校準共識指標計算
+                getCandidateScoreGap(candidateId) {
+                    // 取出所有對此候選人打過分的考官總分，排除一票否決
+                    const activeScores = [];
+                    this.examiners.forEach(e => {
+                        if (this.hasExaminerScored(e.id, candidateId)) {
+                            activeScores.push(this.getExaminerTotalScoreForCandidate(e.id, candidateId));
+                        }
+                    });
+                    if (activeScores.length <= 1) return null;
+                    return Math.max(...activeScores) - Math.min(...activeScores);
+                },
+                getCandidateScoreStdDev(candidateId) {
+                    const activeScores = [];
+                    this.examiners.forEach(e => {
+                        if (this.hasExaminerScored(e.id, candidateId)) {
+                            activeScores.push(this.getExaminerTotalScoreForCandidate(e.id, candidateId));
+                        }
+                    });
+                    if (activeScores.length <= 1) return null;
+                    const n = activeScores.length;
+                    const mean = activeScores.reduce((a, b) => a + b) / n;
+                    return Math.sqrt(activeScores.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / n);
+                },
+                hasCandidateVetoConflict(candidateId) {
+                    // 有人給 Veto(1分) 且 有人沒給 Veto 的情況
+                    let hasVeto = false;
+                    let hasNormal = false;
+                    this.examiners.forEach(e => {
+                        if (this.hasExaminerScored(e.id, candidateId)) {
+                            if (this.isCandidateVetoedByExaminer(e.id, candidateId)) {
+                                hasVeto = true;
+                            } else {
+                                hasNormal = true;
+                            }
+                        }
+                    });
+                    return hasVeto && hasNormal;
+                },
+
+                // Chart.js 動態雷達圖
+                updateRadarChart() {
+                    const canvas = document.getElementById('radarChart');
+                    if (!canvas) return;
+
+                    // 當前考官打分數據
+                    const activeScores = this.currentScores.map(s => s || 0);
+
+                    // 計算所有考官對當前候選人的平均能力打分
+                    const avgScores = [0, 0, 0, 0];
+                    const counts = [0, 0, 0, 0];
+                    this.examiners.forEach(e => {
+                        const key = `${e.id}_${this.currentCandidateId}`;
+                        const scoreArr = this.scores[key];
+                        if (scoreArr) {
+                            for (let i = 0; i < 4; i++) {
+                                if (scoreArr[i] !== null) {
+                                    avgScores[i] += scoreArr[i];
+                                    counts[i]++;
+                                }
+                            }
+                        }
+                    });
+                    const finalAvgScores = avgScores.map((sum, i) => counts[i] > 0 ? parseFloat((sum / counts[i]).toFixed(1)) : 0);
+
+                    const data = {
+                        labels: ['吸收力 (逻辑)', '协作力 (去Ego)', '转化力 (降维)', '灵魂力 (情绪)'],
+                        datasets: [
+                            {
+                                label: '您當前的打分',
+                                data: activeScores,
+                                fill: true,
+                                backgroundColor: this.isCurrentCandidateVetoed ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                borderColor: this.isCurrentCandidateVetoed ? 'rgb(239, 68, 68)' : 'rgb(59, 130, 246)',
+                                pointBackgroundColor: this.isCurrentCandidateVetoed ? 'rgb(239, 68, 68)' : 'rgb(59, 130, 246)',
+                                pointBorderColor: '#fff',
+                                pointHoverBackgroundColor: '#fff',
+                                pointHoverBorderColor: this.isCurrentCandidateVetoed ? 'rgb(239, 68, 68)' : 'rgb(59, 130, 246)'
+                            },
+                            {
+                                label: '全體平均打分',
+                                data: finalAvgScores,
+                                fill: false,
+                                borderDash: [5, 5],
+                                backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                                borderColor: 'rgb(234, 179, 8)',
+                                pointBackgroundColor: 'rgb(234, 179, 8)',
+                                pointBorderColor: '#fff',
+                                pointHoverBackgroundColor: '#fff',
+                                pointHoverBorderColor: 'rgb(234, 179, 8)'
+                            }
+                        ]
+                    };
+
+                    const options = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            r: {
+                                angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                pointLabels: { color: '#94a3b8', font: { size: 10, weight: 'bold' } },
+                                ticks: { display: false, stepSize: 1 },
+                                min: 0,
+                                max: 5
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    };
+
+                    if (this.chartInstance) {
+                        this.chartInstance.data = data;
+                        this.chartInstance.update();
+                    } else {
+                        this.chartInstance = new Chart(canvas, {
+                            type: 'radar',
+                            data: data,
+                            options: options
+                        });
+                    }
+                },
+
+                // 刪除候選人
+                deleteCandidate(id) {
+                    if (confirm('確定要刪除這位候選人嗎？這也會清除他所有的評分與評語紀錄。')) {
+                        this.candidates = this.candidates.filter(c => c.id !== id);
+                        
+                        // 清理與該候選人相關的鍵值
+                        const keysToDelete = Object.keys(this.scores).filter(k => k.endsWith(`_${id}`));
+                        keysToDelete.forEach(k => {
+                            delete this.scores[k];
+                            delete this.comments[k];
+                        });
+
+                        // 如果當前選中的候選人被刪除了，切換到第一個
+                        if (this.currentCandidateId == id && this.candidates.length > 0) {
+                            this.currentCandidateId = this.candidates[0].id;
+                        }
+                        
+                        this.saveToLocalStorage();
+                        this.updateRadarChart();
+                    }
+                },
+
+                // 新增候選人
+                addCandidate() {
+                    if (!this.newCandidateName || !this.newCandidateCode) {
+                        alert('請輸入候選人姓名與編號！');
+                        return;
+                    }
+                    
+                    // 檢查編號是否重複
+                    if (this.candidates.some(c => c.code === this.newCandidateCode)) {
+                        alert('該候選人編號已存在！');
+                        return;
+                    }
+
+                    // 找出最大的 id
+                    const maxId = this.candidates.reduce((max, c) => c.id > max ? c.id : max, 0);
+                    const newCandidate = {
+                        id: maxId + 1,
+                        name: this.newCandidateName,
+                        code: this.newCandidateCode,
+                        group: this.newCandidateGroup
+                    };
+
+                    this.candidates.push(newCandidate);
+                    
+                    // 重置表單
+                    this.newCandidateName = '';
+                    // 自動遞增下一個編號
+                    const nextNum = parseInt(newCandidate.code) + 1;
+                    this.newCandidateCode = isNaN(nextNum) ? '' : (nextNum < 10 ? '0' + nextNum : '' + nextNum);
+                    
+                    this.saveToLocalStorage();
+                    alert('新增候選人成功！');
+                },
+
+                // 新增考官
+                addExaminer() {
+                    if (!this.newExaminerName) {
+                        alert('請輸入考官姓名與職稱！');
+                        return;
+                    }
+
+                    // 找出最大的 id
+                    const maxId = this.examiners.reduce((max, e) => e.id > max ? e.id : max, 0);
+                    const newId = maxId + 1;
+                    const newExaminer = {
+                        id: newId,
+                        name: `${newId}. ${this.newExaminerName}`
+                    };
+
+                    this.examiners.push(newExaminer);
+                    this.newExaminerName = '';
+                    this.saveToLocalStorage();
+                    alert('新增考官成功！');
+                },
+
+                // 刪除考官
+                deleteExaminer(id) {
+                    if (this.examiners.length <= 1) {
+                        alert('系統必須保留至少一位考官！');
+                        return;
+                    }
+                    if (confirm('確定要刪除這位考官嗎？這也會清除該考官所有的評分與評語紀錄。')) {
+                        this.examiners = this.examiners.filter(e => e.id !== id);
+                        
+                        // 清理與該考官相關的鍵值
+                        const keysToDelete = Object.keys(this.scores).filter(k => k.startsWith(`${id}_`));
+                        keysToDelete.forEach(k => {
+                            delete this.scores[k];
+                            delete this.comments[k];
+                        });
+
+                        // 如果當前選中的考官被刪成了別的，切換到第一個
+                        if (this.currentExaminerId == id) {
+                            this.currentExaminerId = this.examiners[0].id;
+                        }
+                        
+                        this.saveToLocalStorage();
+                        this.updateRadarChart();
+                    }
+                },
+
+                // 匯出當前考官候選人名單與評分表 (CSV)
+                exportCandidatesAndScores() {
+                    let csvContent = '';
+                    const headers = ['編號', '姓名', '組別', '維度1_吸收力', '維度2_協作力', '維度3_轉化力', '維度4_靈魂力', '總得分', '評語備註'];
+                    csvContent += headers.map(h => `"${h}"`).join(',') + '\r\n';
+
+                    this.candidates.forEach(c => {
+                        const key = `${this.currentExaminerId}_${c.id}`;
+                        const scoreArr = this.scores[key] || [null, null, null, null];
+                        const comment = this.comments[key] || '';
+                        
+                        const isVeto = scoreArr.includes(1);
+                        const totalScore = isVeto ? 0 : scoreArr.reduce((sum, s) => sum + (s || 0), 0);
+
+                        const row = [
+                            c.code,
+                            c.name,
+                            c.group,
+                            scoreArr[0] !== null ? scoreArr[0] : '',
+                            scoreArr[1] !== null ? scoreArr[1] : '',
+                            scoreArr[2] !== null ? scoreArr[2] : '',
+                            scoreArr[3] !== null ? scoreArr[3] : '',
+                            totalScore,
+                            comment.replace(/"/g, '""')
+                        ];
+                        csvContent += row.map(cell => `"${cell}"`).join(',') + '\r\n';
+                    });
+
+                    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    const currentEx = this.examiners.find(e => e.id == this.currentExaminerId);
+                    const examinerName = currentEx ? (currentEx.name.split(' ')[1] || '考官') : '考官';
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `${examinerName}_候選人名單與評分表.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                },
+
+                // 匯入候選人名單與評分 (CSV)
+                importCandidatesAndScores(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const text = e.target.result;
+                            const lines = text.split(/\r?\n/);
+                            if (lines.length < 2) throw new Error('檔案行數不足');
+
+                            const parseCSVLine = (line) => {
+                                const result = [];
+                                let cell = '';
+                                let inQuotes = false;
+                                for (let i = 0; i < line.length; i++) {
+                                    const char = line[i];
+                                    if (char === '"') {
+                                        if (inQuotes && line[i + 1] === '"') {
+                                            cell += '"';
+                                            i++;
+                                        } else {
+                                            inQuotes = !inQuotes;
+                                        }
+                                    } else if (char === ',' && !inQuotes) {
+                                        result.push(cell.trim());
+                                        cell = '';
+                                    } else {
+                                        cell += char;
+                                    }
+                                }
+                                result.push(cell.trim());
+                                return result;
+                            };
+
+                            const newCandidates = [...this.candidates];
+                            let importedCount = 0;
+
+                            for (let i = 1; i < lines.length; i++) {
+                                const line = lines[i].trim();
+                                if (!line) continue;
+
+                                const cells = parseCSVLine(line);
+                                if (cells.length < 3) continue;
+
+                                const code = cells[0];
+                                const name = cells[1];
+                                const group = cells[2];
+                                
+                                if (!code || !name) continue;
+
+                                // 尋找或創建候選人
+                                let candidate = newCandidates.find(c => c.code === code);
+                                if (!candidate) {
+                                    const maxId = newCandidates.reduce((max, c) => c.id > max ? c.id : max, 0);
+                                    candidate = {
+                                        id: maxId + 1,
+                                        code,
+                                        name,
+                                        group: ['A', 'B', 'C', 'D'].includes(group) ? group : 'A'
+                                    };
+                                    newCandidates.push(candidate);
+                                } else {
+                                    candidate.name = name;
+                                    if (['A', 'B', 'C', 'D'].includes(group)) {
+                                        candidate.group = group;
+                                    }
+                                }
+
+                                // 尋找是否有分數資料
+                                const key = `${this.currentExaminerId}_${candidate.id}`;
+                                if (cells.length >= 7) {
+                                    const s1 = cells[3] ? parseInt(cells[3]) : null;
+                                    const s2 = cells[4] ? parseInt(cells[4]) : null;
+                                    const s3 = cells[5] ? parseInt(cells[5]) : null;
+                                    const s4 = cells[6] ? parseInt(cells[6]) : null;
+
+                                    const scoresArr = [
+                                        s1 >= 1 && s1 <= 5 ? s1 : null,
+                                        s2 >= 1 && s2 <= 5 ? s2 : null,
+                                        s3 >= 1 && s3 <= 5 ? s3 : null,
+                                        s4 >= 1 && s4 <= 5 ? s4 : null
+                                    ];
+
+                                    // 如果有任何有效分數，寫入評分
+                                    if (scoresArr.some(s => s !== null)) {
+                                        this.scores[key] = scoresArr;
+                                    }
+                                }
+
+                                // 尋找是否有評語備註
+                                if (cells.length >= 9 && cells[8]) {
+                                    this.comments[key] = cells[8].replace(/""/g, '"');
+                                }
+
+                                importedCount++;
+                            }
+
+                            this.candidates = newCandidates;
+                            this.saveToLocalStorage();
+                            this.updateRadarChart();
+                            alert(`成功匯入 ${importedCount} 筆候選人資料與評分！`);
+                        } catch (err) {
+                            alert('匯入 CSV 時出錯：' + err.message);
+                        }
+                    };
+                    reader.readAsText(file, 'UTF-8');
+                },
+
+                // 匯出綜合得分表 (Excel 快捷摘要)
+                exportCandidatesExecutiveSummary() {
+                    let csvContent = '';
+                    const headers = ['編號', '姓名', '組別', '綜合錄用狀態', '綜合平均總分', '吸收力_平均分', '協作力_平均分', '轉化力_平均分', '靈魂力_平均分', '已評考官人數'];
+                    csvContent += headers.map(h => `"${h}"`).join(',') + '\r\n';
+
+                    this.candidates.forEach(c => {
+                        let isVetoed = false;
+                        const sums = [0, 0, 0, 0];
+                        const counts = [0, 0, 0, 0];
+                        let totalSum = 0;
+                        let gradedCount = 0;
+
+                        this.examiners.forEach(e => {
+                            const key = `${e.id}_${c.id}`;
+                            const scoreArr = this.scores[key];
+                            if (scoreArr) {
+                                if (scoreArr.includes(1)) {
+                                    isVetoed = true;
+                                }
+                                let hasScored = false;
+                                for (let i = 0; i < 4; i++) {
+                                    if (scoreArr[i] !== null) {
+                                        sums[i] += scoreArr[i];
+                                        counts[i]++;
+                                        hasScored = true;
+                                    }
+                                }
+                                if (hasScored) {
+                                    if (!scoreArr.includes(1)) {
+                                        totalSum += scoreArr.reduce((sum, s) => sum + (s || 0), 0);
+                                    }
+                                    gradedCount++;
+                                }
+                            }
+                        });
+
+                        const averageScore = gradedCount > 0 ? (totalSum / gradedCount) : 0;
+                        
+                        let statusText = '等待評分';
+                        if (isVetoed) statusText = '一票否決 (不錄用)';
+                        else if (gradedCount > 0) {
+                            statusText = averageScore >= 16 ? '卓越 (推薦錄用)' : '合格 (儲備觀察)';
+                        }
+
+                        const row = [
+                            c.code,
+                            c.name,
+                            c.group,
+                            statusText,
+                            isVetoed ? 0 : averageScore.toFixed(2),
+                            counts[0] > 0 ? (sums[0] / counts[0]).toFixed(2) : '-',
+                            counts[1] > 0 ? (sums[1] / counts[1]).toFixed(2) : '-',
+                            counts[2] > 0 ? (sums[2] / counts[2]).toFixed(2) : '-',
+                            counts[3] > 0 ? (sums[3] / counts[3]).toFixed(2) : '-',
+                            gradedCount
+                        ];
+                        csvContent += row.map(cell => `"${cell}"`).join(',') + '\r\n';
+                    });
+
+                    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `Uni_KOC_候選人綜合得分表.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                },
+
+                // 隨機填充擬真模擬打分數據 (演練沙盒)
+                simulateMockData() {
+                    if (!confirm('此操作將會用隨機的仿真打分與評語覆蓋您目前的數據，確定要繼續嗎？')) return;
+
+                    const mockScores = {};
+                    const mockComments = {};
+
+                    // 隨機生成仿真數據
+                    this.candidates.forEach(c => {
+                        // 隨機生成是否觸發 veto (5% 的機率某個候選人會被某考官 Veto)
+                        const willBeVetoed = Math.random() < 0.12; 
+                        const randomExIndex = Math.floor(Math.random() * this.examiners.length);
+                        const vetoExaminer = this.examiners[randomExIndex] ? this.examiners[randomExIndex].id : 1;
+                        const vetoDim = Math.floor(Math.random() * 4); // 隨機哪個維度
+
+                        // 也有少部分完全沒打分的
+                        const isUngraded = Math.random() < 0.10;
+
+                        this.examiners.forEach(e => {
+                            const key = `${e.id}_${c.id}`;
+                            
+                            if (isUngraded && Math.random() < 0.8) {
+                                // 維持未打分
+                                return;
+                            }
+
+                            if (willBeVetoed && e.id == vetoExaminer) {
+                                // 注入一個 1 分的 VETO
+                                const scoresArr = [];
+                                for (let d = 0; d < 4; d++) {
+                                    scoresArr.push(d === vetoDim ? 1 : Math.floor(Math.random() * 3) + 3); // 其他2~5分
+                                }
+                                mockScores[key] = scoresArr;
+                                mockComments[key] = `行為觀察：候選人在小組中展現出較強的防備情緒，甚至出現直接拒絕吸收或說教隊友的極端行為，觸發一票否決警戒線。`;
+                            } else {
+                                // 正常生成 2 ~ 5 分
+                                const scoresArr = [];
+                                // 不同候選人有實力差 (1.優秀組, 2.中等組, 3.落後組)
+                                let baseRand = Math.random();
+                                let minS = 3, maxS = 5;
+                                if (c.id <= 5) { minS = 4; maxS = 5; } // 頂尖
+                                else if (c.id >= 16) { minS = 2; maxS = 4; } // 較平庸
+
+                                for (let d = 0; d < 4; d++) {
+                                    scoresArr.push(Math.floor(Math.random() * (maxS - minS + 1)) + minS);
+                                }
+                                mockScores[key] = scoresArr;
+
+                                // 仿真評語隨機庫
+                                const commentsPool = [
+                                    '思考靈活，能夠清晰地將球體水位上升與降維表達結合。排版很精準。',
+                                    '溝通溫和，在協作中很會去 Ego，並在隊友卡關時主動給予情緒錨定。',
+                                    '圖解能力極佳，用生活化的水庫例子解釋了 3D 水位公式。',
+                                    '面對質疑能冷靜防禦，逐字稿對蠢這個字的安撫回答非常溫暖到位。',
+                                    '表現中規中矩，公式推導完整但 Pitching 稍微像在背稿子，缺乏畫面感。',
+                                    '計算上有點卡關，但在小組討論中非常會提問和引導，情商很高。'
+                                ];
+                                if (Math.random() < 0.7) {
+                                    mockComments[key] = `[考官觀察] ` + commentsPool[Math.floor(Math.random() * commentsPool.length)];
+                                }
+                            }
+                        });
+                    });
+
+                    this.scores = mockScores;
+                    this.comments = mockComments;
+                    this.saveToLocalStorage();
+                    this.updateRadarChart();
+                    alert('一鍵仿真數據注入成功！您現在可以任意點選候選人預覽評分，或在「總控儀表板」中查看排名、落差校準矩陣與共識分析。');
+                },
+
+                // 數據本地儲存
+                saveToLocalStorage() {
+                    localStorage.setItem('uni_koc_candidates', JSON.stringify(this.candidates));
+                    localStorage.setItem('uni_koc_examiners', JSON.stringify(this.examiners));
+                    localStorage.setItem('uni_koc_scores', JSON.stringify(this.scores));
+                    localStorage.setItem('uni_koc_comments', JSON.stringify(this.comments));
+                },
+                loadFromLocalStorage() {
+                    const savedCandidates = localStorage.getItem('uni_koc_candidates');
+                    const savedExaminers = localStorage.getItem('uni_koc_examiners');
+                    const savedScores = localStorage.getItem('uni_koc_scores');
+                    const savedComments = localStorage.getItem('uni_koc_comments');
+                    
+                    if (savedCandidates) this.candidates = JSON.parse(savedCandidates);
+                    if (savedExaminers) this.examiners = JSON.parse(savedExaminers);
+                    if (savedScores) this.scores = JSON.parse(savedScores);
+                    if (savedComments) this.comments = JSON.parse(savedComments);
+                },
+
+                // 導出 CSV (帶有 UTF-8 BOM，防止 Windows Excel 亂碼)
+                exportToCSV() {
+                    let csvContent = '';
+                    
+                    // 標題行
+                    const headers = [
+                        '編號', '姓名', '組別', '綜合狀態', '綜合平均分', 
+                        '陳大文總分', '林美玲總分', '張家豪總分', '黃曉彤總分', '吳志強總分', '梁雅雯總分',
+                        '陳大文4D明細', '林美玲4D明細', '張家豪4D明細', '黃曉彤4D明細', '吳志強4D明細', '梁雅雯4D明細',
+                        '綜合標準差', '共識最大差', '考官評語備註彙整'
+                    ];
+                    csvContent += headers.map(h => `"${h}"`).join(',') + '\r\n';
+
+                    // 候選人資料行
+                    this.candidates.forEach(c => {
+                        let totalSum = 0;
+                        let count = 0;
+                        let isVetoed = false;
+                        const examTotals = [];
+                        const examDetails = [];
+                        const commentsList = [];
+
+                        this.examiners.forEach(e => {
+                            const key = `${e.id}_${c.id}`;
+                            const scoreArr = this.scores[key];
+                            const comment = this.comments[key];
+
+                            if (this.isCandidateVetoedByExaminer(e.id, c.id)) {
+                                isVetoed = true;
+                            }
+
+                            if (this.hasExaminerScored(e.id, c.id)) {
+                                const examTotal = this.getExaminerTotalScoreForCandidate(e.id, c.id);
+                                if (!this.isCandidateVetoedByExaminer(e.id, c.id)) {
+                                    totalSum += examTotal;
+                                }
+                                count++;
+                                
+                                examTotals.push(this.isCandidateVetoedByExaminer(e.id, c.id) ? 'VETO' : examTotal);
+                                examDetails.push(`[${scoreArr.map(s => s || '-').join('/')}]`);
+                                if (comment) {
+                                    commentsList.push(`${e.name.split(' ')[0]}: ${comment.replace(/"/g, '""')}`);
+                                }
+                            } else {
+                                examTotals.push('-');
+                                examDetails.push('[-/-/-/-]');
+                            }
+                        });
+
+                        const averageScore = count > 0 ? (totalSum / count) : 0;
+                        const gap = this.getCandidateScoreGap(c.id);
+                        const std = this.getCandidateScoreStdDev(c.id);
+                        
+                        let statusText = '等待評分';
+                        if (isVetoed) statusText = '🚨 一票否決 (不錄用)';
+                        else if (count > 0) statusText = '正常評分中';
+                        
+                        const row = [
+                            c.code,
+                            c.name,
+                            c.group,
+                            statusText,
+                            isVetoed ? 0 : averageScore.toFixed(2),
+                            ...examTotals,
+                            ...examDetails,
+                            std !== null ? std.toFixed(2) : '-',
+                            gap !== null ? gap : '-',
+                            commentsList.join(' | ')
+                        ];
+
+                        csvContent += row.map(cell => `"${cell}"`).join(',') + '\r\n';
+                    });
+
+                    // 輸出 Blob (帶有 BOM)
+                    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `Uni_KOC_Hackathon_Scores_2026.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                },
+
+                // 導入 CSV 備份
+                importFromCSV(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const text = e.target.result;
+                            const lines = text.split(/\r?\n/);
+                            if (lines.length < 2) throw new Error('檔案行數不足');
+
+                            // RFC 4180 兼容的 CSV 單行解析器
+                            const parseCSVLine = (line) => {
+                                const result = [];
+                                let cell = '';
+                                let inQuotes = false;
+                                for (let i = 0; i < line.length; i++) {
+                                    const char = line[i];
+                                    if (char === '"') {
+                                        if (inQuotes && line[i + 1] === '"') {
+                                            cell += '"';
+                                            i++;
+                                        } else {
+                                            inQuotes = !inQuotes;
+                                        }
+                                    } else if (char === ',' && !inQuotes) {
+                                        result.push(cell.trim());
+                                        cell = '';
+                                    } else {
+                                        cell += char;
+                                    }
+                                }
+                                result.push(cell.trim());
+                                return result;
+                            };
+
+                            const importedScores = {};
+                            const importedComments = {};
+
+                            for (let i = 1; i < lines.length; i++) {
+                                const line = lines[i].trim();
+                                if (!line) continue;
+
+                                const cleanCells = parseCSVLine(line);
+                                if (cleanCells.length < 5) continue;
+
+                                const code = cleanCells[0];
+                                const candidate = this.candidates.find(c => c.code === code);
+                                if (!candidate) continue;
+
+                                // 提取 6 個考官的 4D 詳細資料 (對應 headers)
+                                // [陳大文4D明細 (第12欄), 林美玲4D明細, ...]
+                                const startDetailsCol = 11; 
+                                for (let eIdx = 0; eIdx < 6; eIdx++) {
+                                    const examId = eIdx + 1;
+                                    const detailsStr = cleanCells[startDetailsCol + eIdx]; // e.g. "[5/4/4/5]"
+                                    const key = `${examId}_${candidate.id}`;
+
+                                    if (detailsStr && detailsStr.startsWith('[') && detailsStr.endsWith(']')) {
+                                        const cleanStr = detailsStr.slice(1, -1);
+                                        const scoresArr = cleanStr.split('/').map(s => s === '-' ? null : parseInt(s));
+                                        if (scoresArr.length === 4 && scoresArr.some(s => s !== null)) {
+                                            importedScores[key] = scoresArr;
+                                        }
+                                    }
+                                }
+
+                                // 提取備註 (第20欄)
+                                const commentsCol = 19; 
+                                const commentsCombined = cleanCells[commentsCol];
+                                if (commentsCombined) {
+                                    const parts = commentsCombined.split(' | ');
+                                    parts.forEach(p => {
+                                        const parts2 = p.split(': ');
+                                        if (parts2.length >= 2) {
+                                            const examName = parts2[0].trim();
+                                            const exam = this.examiners.find(ex => ex.name.includes(examName));
+                                            if (exam) {
+                                                const key = `${exam.id}_${candidate.id}`;
+                                                importedComments[key] = parts2.slice(1).join(': ').replace(/""/g, '"');
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+
+                            this.scores = importedScores;
+                            this.comments = importedComments;
+                            this.saveToLocalStorage();
+                            this.updateRadarChart();
+                            alert('CSV 評分備份導入成功！');
+                        } catch (err) {
+                            alert('導入 CSV 時出錯，請確認檔案格式是否正確。錯誤: ' + err.message);
+                        }
+                    };
+                    reader.readAsText(file, 'UTF-8');
+                },
+
+                // 清空重置
+                clearAllData() {
+                    if (confirm('⚠️ 警告：這將永久刪除所有考官已儲存的評分、備註，並將候選人與考官名單還原為預設名單！此操作不可逆。確定要完全清空與重置嗎？')) {
+                        this.scores = {};
+                        this.comments = {};
+                        this.candidates = JSON.parse(JSON.stringify(DEFAULT_CANDIDATES));
+                        this.examiners = JSON.parse(JSON.stringify(DEFAULT_EXAMINERS));
+                        this.currentCandidateId = this.candidates[0].id;
+                        this.currentExaminerId = this.examiners[0].id;
+                        localStorage.removeItem('uni_koc_scores');
+                        localStorage.removeItem('uni_koc_comments');
+                        localStorage.removeItem('uni_koc_candidates');
+                        localStorage.removeItem('uni_koc_examiners');
+                        this.saveToLocalStorage();
+                        this.updateRadarChart();
+                        alert('評分系統、候選人與考官名單已完全重置。');
+                    }
+                }
+            },
+            mounted() {
+                // 從 LocalStorage 還原
+                this.loadFromLocalStorage();
+
+                // 初始化 MathJax
+                if (window.MathJax) {
+                    window.MathJax.typesetPromise();
+                }
+
+                // 延遲渲染 Chart.js 確保 Canvas 在 DOM 中
+                setTimeout(() => {
+                    this.updateRadarChart();
+                }, 300);
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
