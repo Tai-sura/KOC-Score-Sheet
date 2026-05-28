@@ -1041,14 +1041,10 @@
                 currentCandidate() {
                     return this.candidates.find(c => c.id == this.currentCandidateId) || this.candidates[0] || { id: 0, name: '無候選人', code: '--', group: 'A' };
                 },
-                // 當前選中候選人 & 當前考官 的評分陣列
+                // 當前選中候選人 & 當前考官 的評分陣列 (唯讀，無副作用，避免切換候選人時引發不必要的狀態變更與硬碟儲存)
                 currentScores() {
                     const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
-                    if (!this.scores[key]) {
-                        // 初始化
-                        this.scores[key] = [null, null, null, null];
-                    }
-                    return this.scores[key];
+                    return this.scores[key] || [null, null, null, null];
                 },
                 // 考官備註雙向綁定
                 currentComment: {
@@ -1263,15 +1259,12 @@
                     return 'text-green-500 font-bold';
                 },
 
-                // 核心評分行為
+                // 核心評分行為 (更新評分陣列並賦值，確保觸發 Vue 3 的深層響應式更新)
                 setScore(dimIndex, score) {
                     const key = `${this.currentExaminerId}_${this.currentCandidateId}`;
-                    if (!this.scores[key]) {
-                        this.scores[key] = [null, null, null, null];
-                    }
-                    // 更新維度分數
-                    this.scores[key][dimIndex] = score;
-                    this.saveToLocalStorage();
+                    const currentArr = this.scores[key] ? [...this.scores[key]] : [null, null, null, null];
+                    currentArr[dimIndex] = score;
+                    this.scores[key] = currentArr;
                 },
                 selectCandidate(id) {
                     this.currentCandidateId = id;
@@ -1681,7 +1674,7 @@
                             }
 
                             this.candidates = newCandidates;
-                            this.saveToLocalStorage();
+                            this.saveToLocalStorageImmediate();
                             this.updateRadarChart();
                             alert(`成功匯入 ${importedCount} 筆候選人資料與評分！`);
                         } catch (err) {
@@ -1827,13 +1820,25 @@
 
                     this.scores = mockScores;
                     this.comments = mockComments;
-                    this.saveToLocalStorage();
+                    this.saveToLocalStorageImmediate();
                     this.updateRadarChart();
                     alert('一鍵仿真數據注入成功！您現在可以任意點選候選人預覽評分，或在「總控儀表板」中查看排名、落差校準矩陣與共識分析。');
                 },
 
-                // 數據本地儲存
+                // 數據本地儲存 (採用防抖/Debounce機制，合併短時間內多次寫入，完美解決磁碟 I/O 造成的介面延遲與卡頓)
                 saveToLocalStorage() {
+                    if (this._saveTimeout) {
+                        clearTimeout(this._saveTimeout);
+                    }
+                    this._saveTimeout = setTimeout(() => {
+                        this.saveToLocalStorageImmediate();
+                    }, 100);
+                },
+                saveToLocalStorageImmediate() {
+                    if (this._saveTimeout) {
+                        clearTimeout(this._saveTimeout);
+                        this._saveTimeout = null;
+                    }
                     localStorage.setItem('uni_koc_candidates', JSON.stringify(this.candidates));
                     localStorage.setItem('uni_koc_examiners', JSON.stringify(this.examiners));
                     localStorage.setItem('uni_koc_scores', JSON.stringify(this.scores));
@@ -2024,7 +2029,7 @@
 
                             this.scores = importedScores;
                             this.comments = importedComments;
-                            this.saveToLocalStorage();
+                            this.saveToLocalStorageImmediate();
                             this.updateRadarChart();
                             alert('CSV 評分備份導入成功！');
                         } catch (err) {
@@ -2047,7 +2052,7 @@
                         localStorage.removeItem('uni_koc_comments');
                         localStorage.removeItem('uni_koc_candidates');
                         localStorage.removeItem('uni_koc_examiners');
-                        this.saveToLocalStorage();
+                        this.saveToLocalStorageImmediate();
                         this.updateRadarChart();
                         alert('評分系統、候選人與考官名單已完全重置。');
                     }
